@@ -47,8 +47,14 @@ async def lifespan(app: FastAPI):
     await bot_app.bot.set_webhook(url=webhook_url)
     print(f"✅ Webhook set to: {webhook_url}")
 
+    # Start the bot - this runs the update queue processor so handlers actually run!
+    await bot_app.start()
+
     start_scheduler()
     yield
+
+    print("🔄 Stopping Telegram bot...")
+    await bot_app.stop()
 
 # -------------------- FastAPI App --------------------
 app = FastAPI(lifespan=lifespan)
@@ -103,9 +109,11 @@ def start_scheduler():
 
 # -------------------- Telegram Commands --------------------
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("DEBUG: start_command triggered")
     await update.message.reply_text("🤖 Hello! Send me a `.jsonl` file to upload.")
 
 async def hello_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("DEBUG: hello_command triggered")
     await update.message.reply_text("Welcome to Telegram bot")
 
 async def telegram_run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,6 +122,7 @@ async def telegram_run_pipeline(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text("✅ Main pipeline triggered (simulated)")
 
 async def handle_jsonl_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("DEBUG: handle_jsonl_upload triggered")
     document = update.message.document
     if not document.file_name.endswith(".jsonl"):
         await update.message.reply_text("❌ Only `.jsonl` files are allowed.")
