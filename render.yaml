@@ -1,7 +1,7 @@
 services:
   - type: web
     name: scraper
-    env: python
+    env: env: python-3.10
     plan: free
     branch: main  # or your actual Git branch
     buildCommand: "pip install -r requirements.txt"
