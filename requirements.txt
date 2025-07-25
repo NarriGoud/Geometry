@@ -3,6 +3,6 @@ uvicorn
 python-telegram-bot
 requests
 python-dotenv
-multipart
+python-multipart
 apscheduler
 pytz
