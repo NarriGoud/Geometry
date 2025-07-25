@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: self-learning-api
+    name: scraper
     env: python
     plan: free
     branch: main  # or whatever branch you're pushing
