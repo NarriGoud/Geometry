@@ -194,9 +194,9 @@ async def cancel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_bot_commands(bot_app):
     commands = [
         BotCommand(command="ping", description="Check if API is alive"),
-        BotCommand(command="upload-jsonl", description="Upload supported file"),
+        BotCommand(command="upload_jsonl", description="Upload supported file"),
         BotCommand(command="runpipeline", description="Run main pipeline"),
         BotCommand(command="hello", description="Greet the bot"),
-        BotCommand(command="upload-dataset", description="upload dataset to kaggle"),
+        BotCommand(command="upload_dataset", description="upload dataset to kaggle"),
     ]
     await bot_app.bot.set_my_commands(commands)
