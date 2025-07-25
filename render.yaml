@@ -7,9 +7,3 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn api.api:app --host 0.0.0.0 --port 10000"
     autoDeploy: true
-
-    envVars:
-      - key: TELEGRAM_BOT_TOKEN
-        value: 7132875220:AAFqQjdjSpranGkNtdcl2JZ3yGQoYgYeRnE
-      - key: API_URL
-        value: https://your-api.onrender.com
