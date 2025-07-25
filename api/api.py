@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import pytz
 import json
-
+from fastapi.responses import JSONResponse
 from telegram import BotCommand, Update, Document
 from telegram.ext import (
     ApplicationBuilder,
@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
 
     # Register command handlers
     bot_app.add_handler(CommandHandler("start", start_command))
+    bot_app.add_handler(CommandHandler("ping", ping_command))
     bot_app.add_handler(CommandHandler("hello", hello_command))
     bot_app.add_handler(CommandHandler("runpipeline", telegram_run_pipeline))
 
@@ -102,9 +103,10 @@ async def upload_jsonl(file: UploadFile = File(...)):
             f.write(content)
 
         print(f"✅ File saved: {save_path}")
-        return {"message": f"Received file: {file.filename}"}
+        return JSONResponse(status_code=200, content={"message": f"Received file: {file.filename}"})
+
     except HTTPException:
-        raise  # re-raise known HTTP errors
+        raise
     except Exception as e:
         print("❌ Failed to save file:", e)
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
@@ -140,6 +142,9 @@ async def hello_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("DEBUG: hello_command triggered")
     await update.message.reply_text("👋 Welcome to the bot!")
 
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🏓 Bot is alive!")
+
 async def telegram_run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("⚡ Telegram triggered main pipeline")
     # subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
@@ -172,12 +177,14 @@ async def handle_jsonl_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
         files = {'file': (document.file_name, byte_data)}
 
         print(f"📤 Uploading file to API: {document.file_name}")
-        response = requests.post(f"{API_URL}/upload-jsonl", files=files)
+        upload_url = f"{API_URL}/upload-jsonl"
+        response = requests.post(upload_url, files=files)
 
         if response.status_code == 200:
-            await update.message.reply_text(f"✅ File uploaded: {document.file_name}")
+            await update.message.reply_text("✅ File uploaded successfully.")
         else:
             await update.message.reply_text(f"❌ Upload failed: {response.status_code} - {response.text}")
+
     except Exception as e:
         print("❌ Upload error:", e)
         await update.message.reply_text(f"🚨 Error uploading file: {e}")
@@ -194,9 +201,9 @@ async def cancel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_bot_commands(bot_app):
     commands = [
         BotCommand(command="ping", description="Check if API is alive"),
-        BotCommand(command="upload_jsonl", description="Upload supported file"),
+        BotCommand(command="upload", description="Upload supported file"),
         BotCommand(command="runpipeline", description="Run main pipeline"),
         BotCommand(command="hello", description="Greet the bot"),
-        BotCommand(command="upload_dataset", description="upload dataset to kaggle"),
+        BotCommand(command="dataset", description="Upload dataset to Kaggle"),
     ]
     await bot_app.bot.set_my_commands(commands)
