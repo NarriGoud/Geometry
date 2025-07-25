@@ -21,7 +21,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_URL = os.getenv("API_URL")  # Your API URL, e.g. https://your-render-app.onrender.com
-PIPELINE_SCRIPT_PATH = "/absolute/path/to/main.py"  # ⚠️ Update this to your real pipeline path
+#PIPELINE_SCRIPT_PATH = "/absolute/path/to/main.py"  # ⚠️ Update this to your real pipeline path
 WEBHOOK_PATH = "/webhook"
 
 bot_app = None  # Global bot app reference
