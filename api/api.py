@@ -16,12 +16,13 @@ from telegram.ext import (
 )
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-API_URL = os.getenv("API_URL")  # Your API URL, e.g. https://your-render-app.onrender.com
-#PIPELINE_SCRIPT_PATH = "/absolute/path/to/main.py"  # ⚠️ Update this to your real pipeline path
+API_URL = os.getenv("API_URL")  # https://your-render-app.onrender.com
+# PIPELINE_SCRIPT_PATH = "/absolute/path/to/main.py"  # ⛔ Uncomment and set if needed
 WEBHOOK_PATH = "/webhook"
 
 bot_app = None  # Global bot app reference
@@ -31,11 +32,8 @@ bot_app = None  # Global bot app reference
 async def lifespan(app: FastAPI):
     global bot_app
     print("🔄 Starting Telegram bot with webhook...")
-    bot_app = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .build()
-    )
+
+    bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     bot_app.add_handler(CommandHandler("start", start_command))
     bot_app.add_handler(CommandHandler("hello", hello_command))
@@ -45,12 +43,11 @@ async def lifespan(app: FastAPI):
     await bot_app.initialize()
     await set_bot_commands(bot_app)
 
-    # Set Telegram webhook to your Render URL
+    # Set webhook to your live Render API
     webhook_url = f"{API_URL}{WEBHOOK_PATH}"
     await bot_app.bot.set_webhook(url=webhook_url)
     print(f"✅ Webhook set to: {webhook_url}")
 
-    # Start scheduler
     start_scheduler()
     yield
 
@@ -82,14 +79,13 @@ def run_pipeline():
     # subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
     return {"message": "Pipeline triggered successfully."}
 
-# 🧠 Add webhook handler route
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
     body = await request.body()
     await bot_app.update_queue.put(Update.de_json(data=body.decode("utf-8"), bot=bot_app.bot))
     return {"status": "received"}
 
-# -------------------- Scheduled Pipeline --------------------
+# -------------------- Scheduler --------------------
 def run_scheduled_pipeline():
     try:
         print("🕒 [Scheduled] Running main.py pipeline... [SIMULATION]")
@@ -104,7 +100,7 @@ def start_scheduler():
     scheduler.start()
     print("📅 Scheduler started to run every 3 minutes.")
 
-# -------------------- Telegram Handlers --------------------
+# -------------------- Telegram Commands --------------------
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Hello! Send me a `.jsonl` file to upload.")
 
