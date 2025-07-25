@@ -1,26 +1,40 @@
 import os
 import requests
 import threading
+import asyncio
+import subprocess
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+import pytz
+from telegram import BotCommand
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from dotenv import load_dotenv
 
 load_dotenv()
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-API_URL = os.getenv("API_URL")
 
-# -------------------- Define lifespan context --------------------
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+API_URL = os.getenv("API_URL")  # e.g., http://localhost:10000
+PIPELINE_SCRIPT_PATH = "/absolute/path/to/main.py"  # ⚠️ UPDATE this to your real pipeline path
+
+# -------------------- Lifespan to start Telegram bot + Scheduler --------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start Telegram bot in background thread
-    threading.Thread(target=run_telegram_bot, daemon=True).start()
+    # Start Telegram bot as a background task
+    asyncio.create_task(run_telegram_bot())
+    # Start the scheduler
+    start_scheduler()
     yield
-    # (Optional) Cleanup logic on shutdown goes here
 
-# -------------------- FastAPI app setup --------------------
+# -------------------- FastAPI App --------------------
 app = FastAPI(lifespan=lifespan)
 
 @app.get("/ping")
@@ -37,47 +51,94 @@ async def upload_jsonl(file: UploadFile = File(...)):
         with open(save_path, "wb") as f:
             content = await file.read()
             f.write(content)
+        print(f"✅ File saved: {save_path}")
         return {"message": f"Received file: {file.filename}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 
 @app.post("/runpipeline")
 def run_pipeline():
-    return {"message": "Pipeline triggered (placeholder response)."}
+    print("🕒 [Scheduled] Triggered main pipeline...")
 
-# -------------------- Telegram bot setup --------------------
-def ping_command(update: Update, context: CallbackContext):
+
+# def run_pipeline():
+#     try:
+#         print("🚀 Triggering main.py pipeline...")
+#         subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
+#         return {"message": "Pipeline triggered successfully."}
+#     except Exception as e:
+#         return {"message": f"Pipeline failed: {e}"}
+
+# -------------------- Scheduled Pipeline Runner --------------------
+def run_scheduled_pipeline():
     try:
-        response = requests.get(f"{API_URL}/ping")
-        if response.status_code == 200:
-            data = response.json()
-            update.message.reply_text(f"📊 Status: {data.get('status', 'unknown')}")
-        else:
-            update.message.reply_text(f"❌ API not responding (status code: {response.status_code})")
+        print("🕒 [Scheduled] Running main.py pipeline... [SIMULATION]")
+        # Simulate logic for now
+        # subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
+        print("✅ Scheduled job executed [SIMULATED]")
     except Exception as e:
-        update.message.reply_text(f"🚨 Error: {e}")
+        print("❌ [Scheduled] Pipeline failed:", e)
 
-def handle_document(update: Update, context: CallbackContext):
+
+def start_scheduler():
+    scheduler = AsyncIOScheduler(timezone=pytz.timezone("Asia/Kolkata"))
+    scheduler.add_job(run_scheduled_pipeline, IntervalTrigger(minutes=3))
+    scheduler.start()
+    print("📅 Scheduler started to run every 3 minutes.")
+
+# -------------------- Telegram Bot Handlers --------------------
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Hello! Send me a `.jsonl` file to upload.")
+
+async def set_bot_commands(bot_app):
+    commands = [
+        BotCommand(command="ping", description="Check if API is alive"),
+        BotCommand(command="upload", description="Upload a `.jsonl` file"),
+        BotCommand(command="runpipeline", description="Trigger the model pipeline"),
+        BotCommand(command="hello", description="Greet the bot"),
+    ]
+    await bot_app.bot.set_my_commands(commands)
+
+
+async def handle_jsonl_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
     if not document.file_name.endswith(".jsonl"):
-        update.message.reply_text("❌ Only .jsonl files are allowed.")
+        await update.message.reply_text("❌ Only `.jsonl` files are allowed.")
         return
     try:
-        file = document.get_file()
-        file_content = file.download_as_bytearray()
-        files = {'file': (document.file_name, file_content)}
+        file = await document.get_file()
+        byte_data = await file.download_as_bytearray()
+        files = {'file': (document.file_name, byte_data)}
+        print(f"📤 Uploading file to API: {document.file_name}")
         response = requests.post(f"{API_URL}/upload-jsonl", files=files)
         if response.status_code == 200:
-            update.message.reply_text(f"✅ File uploaded: {document.file_name}")
+            await update.message.reply_text(f"✅ File uploaded: {document.file_name}")
         else:
-            update.message.reply_text(f"❌ Upload failed: {response.text}")
+            await update.message.reply_text(f"❌ Upload failed: {response.text}")
     except Exception as e:
-        update.message.reply_text(f"🚨 Error: {e}")
+        print("❌ Upload error:", e)
+        await update.message.reply_text(f"🚨 Error: {e}")
 
-def run_telegram_bot():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("ping", ping_command))
-    dp.add_handler(MessageHandler(Filters.document.mime_type("application/json"), handle_document))
-    updater.start_polling()
-    updater.idle()
+async def hello_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Welcome to Telegram bot")
+
+
+# -------------------- Start Telegram Bot --------------------
+async def run_telegram_bot():
+    bot_app = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .build()
+    )
+
+    bot_app.add_handler(CommandHandler("start", start_command))
+    bot_app.add_handler(CommandHandler("hello", hello_command))
+    bot_app.add_handler(MessageHandler(filters.Document.ALL, handle_jsonl_upload))
+
+    await bot_app.initialize()
+    await set_bot_commands(bot_app)
+    await bot_app.start()
+
+    # ✅ Add this line to start polling updates
+    await bot_app.updater.start_polling()
+
