@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: self-learning-api
+    env: python
+    plan: free
+    branch: main  # or whatever branch you're pushing
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn api.api:app --host 0.0.0.0 --port 10000"
+    autoDeploy: true
