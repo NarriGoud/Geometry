@@ -21,8 +21,7 @@ import json
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-API_URL = os.getenv("API_URL")  # https://your-render-app.onrender.com
-# PIPELINE_SCRIPT_PATH = "/absolute/path/to/main.py"  # ⛔ Uncomment and set if needed
+API_URL = os.getenv("API_URL")  # e.g. https://your-render-app.onrender.com
 WEBHOOK_PATH = "/webhook"
 
 bot_app = None  # Global bot app reference
@@ -54,6 +53,14 @@ async def lifespan(app: FastAPI):
 # -------------------- FastAPI App --------------------
 app = FastAPI(lifespan=lifespan)
 
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(request: Request):
+    body = await request.body()
+    data = json.loads(body.decode("utf-8"))  # Parse incoming JSON to dict
+    update = Update.de_json(data, bot_app.bot)
+    await bot_app.update_queue.put(update)
+    return {"status": "ok"}
+
 @app.get("/ping")
 def ping():
     return {"status": "OK"}
@@ -78,12 +85,6 @@ def run_pipeline():
     print("🕒 Triggered main pipeline... [SIMULATION]")
     # subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
     return {"message": "Pipeline triggered successfully."}
-
-@app.post(WEBHOOK_PATH)
-async def telegram_webhook(request: Request):
-    body = await request.body()
-    await bot_app.update_queue.put(Update.de_json(data=body.decode("utf-8"), bot=bot_app.bot))
-    return {"status": "received"}
 
 # -------------------- Scheduler --------------------
 def run_scheduled_pipeline():
