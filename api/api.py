@@ -1,36 +1,56 @@
 import os
 import requests
-import threading
 import asyncio
 import subprocess
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import pytz
-from telegram import BotCommand
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    filters
+    filters,
 )
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from dotenv import load_dotenv
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-API_URL = os.getenv("API_URL")  # e.g., http://localhost:10000
-PIPELINE_SCRIPT_PATH = "/absolute/path/to/main.py"  # ⚠️ UPDATE this to your real pipeline path
+API_URL = os.getenv("API_URL")  # Your API URL, e.g. https://your-render-app.onrender.com
+PIPELINE_SCRIPT_PATH = "/absolute/path/to/main.py"  # ⚠️ Update this to your real pipeline path
+WEBHOOK_PATH = "/webhook"
 
-# -------------------- Lifespan to start Telegram bot + Scheduler --------------------
+bot_app = None  # Global bot app reference
+
+# -------------------- Lifespan --------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start Telegram bot as a background task
-    asyncio.create_task(run_telegram_bot())
-    # Start the scheduler
+    global bot_app
+    print("🔄 Starting Telegram bot with webhook...")
+    bot_app = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .build()
+    )
+
+    bot_app.add_handler(CommandHandler("start", start_command))
+    bot_app.add_handler(CommandHandler("hello", hello_command))
+    bot_app.add_handler(CommandHandler("runpipeline", telegram_run_pipeline))
+    bot_app.add_handler(MessageHandler(filters.Document.ALL, handle_jsonl_upload))
+
+    await bot_app.initialize()
+    await set_bot_commands(bot_app)
+
+    # Set Telegram webhook to your Render URL
+    webhook_url = f"{API_URL}{WEBHOOK_PATH}"
+    await bot_app.bot.set_webhook(url=webhook_url)
+    print(f"✅ Webhook set to: {webhook_url}")
+
+    # Start scheduler
     start_scheduler()
     yield
 
@@ -58,27 +78,25 @@ async def upload_jsonl(file: UploadFile = File(...)):
 
 @app.post("/runpipeline")
 def run_pipeline():
-    print("🕒 [Scheduled] Triggered main pipeline...")
+    print("🕒 Triggered main pipeline... [SIMULATION]")
+    # subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
+    return {"message": "Pipeline triggered successfully."}
 
+# 🧠 Add webhook handler route
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(request: Request):
+    body = await request.body()
+    await bot_app.update_queue.put(Update.de_json(data=body.decode("utf-8"), bot=bot_app.bot))
+    return {"status": "received"}
 
-# def run_pipeline():
-#     try:
-#         print("🚀 Triggering main.py pipeline...")
-#         subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
-#         return {"message": "Pipeline triggered successfully."}
-#     except Exception as e:
-#         return {"message": f"Pipeline failed: {e}"}
-
-# -------------------- Scheduled Pipeline Runner --------------------
+# -------------------- Scheduled Pipeline --------------------
 def run_scheduled_pipeline():
     try:
         print("🕒 [Scheduled] Running main.py pipeline... [SIMULATION]")
-        # Simulate logic for now
         # subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
         print("✅ Scheduled job executed [SIMULATED]")
     except Exception as e:
         print("❌ [Scheduled] Pipeline failed:", e)
-
 
 def start_scheduler():
     scheduler = AsyncIOScheduler(timezone=pytz.timezone("Asia/Kolkata"))
@@ -86,19 +104,17 @@ def start_scheduler():
     scheduler.start()
     print("📅 Scheduler started to run every 3 minutes.")
 
-# -------------------- Telegram Bot Handlers --------------------
+# -------------------- Telegram Handlers --------------------
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Hello! Send me a `.jsonl` file to upload.")
 
-async def set_bot_commands(bot_app):
-    commands = [
-        BotCommand(command="ping", description="Check if API is alive"),
-        BotCommand(command="upload", description="Upload a `.jsonl` file"),
-        BotCommand(command="runpipeline", description="Trigger the model pipeline"),
-        BotCommand(command="hello", description="Greet the bot"),
-    ]
-    await bot_app.bot.set_my_commands(commands)
+async def hello_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Welcome to Telegram bot")
 
+async def telegram_run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("⚡ Telegram triggered main pipeline")
+    # subprocess.run(["python", PIPELINE_SCRIPT_PATH], check=True)
+    await update.message.reply_text("✅ Main pipeline triggered (simulated)")
 
 async def handle_jsonl_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
@@ -119,26 +135,11 @@ async def handle_jsonl_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
         print("❌ Upload error:", e)
         await update.message.reply_text(f"🚨 Error: {e}")
 
-async def hello_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome to Telegram bot")
-
-
-# -------------------- Start Telegram Bot --------------------
-async def run_telegram_bot():
-    bot_app = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .build()
-    )
-
-    bot_app.add_handler(CommandHandler("start", start_command))
-    bot_app.add_handler(CommandHandler("hello", hello_command))
-    bot_app.add_handler(MessageHandler(filters.Document.ALL, handle_jsonl_upload))
-
-    await bot_app.initialize()
-    await set_bot_commands(bot_app)
-    await bot_app.start()
-
-    # ✅ Add this line to start polling updates
-    await bot_app.updater.start_polling()
-
+async def set_bot_commands(bot_app):
+    commands = [
+        BotCommand(command="ping", description="Check if API is alive"),
+        BotCommand(command="upload", description="Upload a `.jsonl` file"),
+        BotCommand(command="runpipeline", description="Trigger the model pipeline"),
+        BotCommand(command="hello", description="Greet the bot"),
+    ]
+    await bot_app.bot.set_my_commands(commands)
